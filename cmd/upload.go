@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -18,22 +20,30 @@ import (
 
 var (
 	providers     []string
+	useAll        bool
+	files         []string
+	folders       []string
 	retryAttempts int
 	retryDelay    time.Duration
 	progress      bool
 )
 
 var uploadCmd = &cobra.Command{
-	Use:   "upload [files/directories...]",
+	Use:   "upload",
 	Short: "Upload files and directories to hosting providers",
-	Long: `Upload one or more files or directories to configured file hosting providers.
-Supports parallel uploads, progress tracking, and multiple output formats.`,
-	Args: cobra.MinimumNArgs(1),
+	Long: `Upload files and directories to configured file hosting providers.
+Supports parallel uploads, progress tracking, and multiple output formats.
+
+Use --file/-f for files and --folder/-d for directories. Supports glob patterns for files.`,
+	Args: cobra.NoArgs,
 	RunE: runUpload,
 }
 
 func init() {
-	uploadCmd.Flags().StringSliceVarP(&providers, "providers", "p", []string{}, "specific providers to use (default: all configured)")
+	uploadCmd.Flags().StringSliceVarP(&providers, "providers", "p", []string{}, "specific providers to use")
+	uploadCmd.Flags().BoolVar(&useAll, "all", false, "use all available providers regardless of configuration")
+	uploadCmd.Flags().StringSliceVarP(&files, "file", "f", []string{}, "files to upload (can be used multiple times, supports glob patterns)")
+	uploadCmd.Flags().StringSliceVarP(&folders, "folder", "d", []string{}, "folders to upload (can be used multiple times)")
 	uploadCmd.Flags().IntVar(&retryAttempts, "retry-attempts", 3, "number of retry attempts per file")
 	uploadCmd.Flags().DurationVar(&retryDelay, "retry-delay", 2*time.Second, "delay between retry attempts")
 	uploadCmd.Flags().BoolVar(&progress, "progress", true, "show upload progress")
@@ -48,7 +58,72 @@ func init() {
 	viper.SetDefault("progress", true)
 }
 
+// expandGlobPatterns expands glob patterns in file paths and returns all matched files
+func expandGlobPatterns(filePatterns []string) ([]string, error) {
+	var result []string
+	for _, pattern := range filePatterns {
+		if strings.Contains(pattern, "*") || strings.Contains(pattern, "?") || strings.Contains(pattern, "[") {
+			// Handle glob patterns
+			matches, err := filepath.Glob(pattern)
+			if err != nil {
+				return nil, fmt.Errorf("invalid glob pattern '%s': %w", pattern, err)
+			}
+			result = append(result, matches...)
+		} else {
+			// Direct file path
+			result = append(result, pattern)
+		}
+	}
+	return result, nil
+}
+
+// validatePaths validates that file paths are actually files and folder paths are directories
+func validatePaths(files []string, folders []string) error {
+	for _, file := range files {
+		if info, err := os.Stat(file); err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("file does not exist: %s", file)
+			}
+			return fmt.Errorf("error checking file %s: %w", file, err)
+		} else if info.IsDir() {
+			return fmt.Errorf("path '%s' is a directory, but --file flag requires a file. Use --folder/-d for directories", file)
+		}
+	}
+
+	for _, folder := range folders {
+		if info, err := os.Stat(folder); err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("directory does not exist: %s", folder)
+			}
+			return fmt.Errorf("error checking directory %s: %w", folder, err)
+		} else if !info.IsDir() {
+			return fmt.Errorf("path '%s' is a file, but --folder/-d flag requires a directory. Use --file/-f for files", folder)
+		}
+	}
+
+	return nil
+}
+
 func runUpload(cmd *cobra.Command, args []string) error {
+	// Validate flags
+	if len(files) == 0 && len(folders) == 0 {
+		return fmt.Errorf("no files or folders specified. Use --file/-f for files or --folder/-d for directories")
+	}
+
+	// Expand glob patterns for files
+	expandedFiles, err := expandGlobPatterns(files)
+	if err != nil {
+		return err
+	}
+
+	// Validate paths
+	if err := validatePaths(expandedFiles, folders); err != nil {
+		return err
+	}
+
+	// Combine all paths for the uploader
+	paths := append(expandedFiles, folders...)
+
 	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -73,13 +148,16 @@ func runUpload(cmd *cobra.Command, args []string) error {
 	// Create provider factory
 	factory := providerpkg.NewFactory()
 
-	// Get provider instances
+	// Get provider instances using the new hierarchy
 	var providerList []uploader.Provider
-	if len(providers) > 0 {
+	if useAll {
+		// Use all available providers regardless of configuration
+		providerList, err = factory.CreateAllProviders()
+	} else if len(providers) > 0 {
 		// Use specified providers
 		providerList, err = factory.CreateProvidersFromNames(providers, cfg.Providers)
 	} else {
-		// Use all enabled providers
+		// Use all enabled providers from configuration
 		providerList, err = factory.CreateProviders(cfg.GetEnabledProviders())
 	}
 
@@ -88,7 +166,18 @@ func runUpload(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(providerList) == 0 {
-		return fmt.Errorf("no providers enabled. Configure providers in %s or specify with -p flag", viper.ConfigFileUsed())
+		var helpMsg strings.Builder
+		helpMsg.WriteString("no providers available. Options:\n")
+		helpMsg.WriteString("  1. Use --all to try all available providers\n")
+		helpMsg.WriteString("  2. Specify providers with --providers/-p flag\n")
+		if viper.ConfigFileUsed() != "" {
+			helpMsg.WriteString(fmt.Sprintf("  3. Configure providers in %s\n\n", viper.ConfigFileUsed()))
+			helpMsg.WriteString("Example:\n  woof upload --all -f file.txt\n  woof upload --providers buzzheavier -d ./folder")
+		} else {
+			helpMsg.WriteString("  3. Configure providers in config file\n\n")
+			helpMsg.WriteString("Example:\n  woof upload --all -f file.txt\n  woof upload --providers buzzheavier -d ./folder")
+		}
+		return fmt.Errorf("%s", helpMsg.String())
 	}
 
 	uploadConfig := uploader.UploadConfig{
@@ -101,7 +190,7 @@ func runUpload(cmd *cobra.Command, args []string) error {
 	}
 
 	// Start uploads
-	resultCh, progressCh, err := upldr.Upload(ctx, args, uploadConfig)
+	resultCh, progressCh, err := upldr.Upload(ctx, paths, uploadConfig)
 	if err != nil {
 		return fmt.Errorf("failed to start upload: %w", err)
 	}

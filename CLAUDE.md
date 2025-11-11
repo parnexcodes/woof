@@ -2,6 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Development Guidelines
+
+### Important Rules
+1. **Always use `go build ./...`** for checking any compilation errors after making changes
+2. **Never use emojis** in code or documentation (including README.md and this file)
+
+### Build Testing
+After any code changes, always verify compilation with:
+```bash
+go build ./...
+```
+
+This ensures all packages compile correctly before running tests or committing changes.
+
 ## Common Development Commands
 
 ### Building
@@ -33,15 +47,23 @@ go install github.com/parnexcodes/woof@latest
 ## Project Architecture
 
 ### High-Level Design
-Woof is a high-performance CLI file uploader built with Go and Cobra. The application uses a modular, interface-based design that supports multiple file hosting providers with concurrent upload capabilities.
+Woof is a high-performance CLI file uploader built with Go and Cobra. The application uses a CLI-first, interface-based design that supports multiple file hosting providers with concurrent upload capabilities. No configuration is required - all features are accessible via command-line flags.
 
 ### Core Components
 
 #### 1. CLI Layer (`cmd/`)
 - **main.go**: Entry point that delegates to cmd package
 - **cmd/root.go**: Root command with global flags, Cobra initialization, and Viper configuration binding
-- **cmd/upload.go**: Upload command implementation
+- **cmd/upload.go**: Upload command with flag-based file/folder selection, provider management, and validation
+- **cmd/upload_test.go**: Comprehensive CLI tests including validation and flag parsing
 - **cmd/version.go**: Version command
+
+### New CLI Features
+- **Flag-based upload**: `--file/-f` for files, `--folder/-d` for directories
+- **Glob pattern support**: Built-in wildcards for flexible file selection
+- **Provider selection**: `--all` uses all providers, `--providers` for specific ones
+- **Strict validation**: Path validation with helpful error messages
+- **CLI-first design**: Works without any configuration; YAML is optional
 
 #### 2. Core Upload Engine (`internal/uploader/`)
 - **uploader.go**: Core interfaces and types (Provider, Uploader, Scanner, UploadResult)
@@ -49,14 +71,16 @@ Woof is a high-performance CLI file uploader built with Go and Cobra. The applic
 - **scanner.go**: File and directory scanning implementation
 
 #### 3. Configuration Management (`internal/config/`)
-- Uses Viper for configuration loading from YAML files and environment variables
+- Uses Viper for optional configuration loading from YAML files and environment variables
 - Supports configuration in `$HOME/.woof.yaml` or local `.woof.yaml`
-- Default values for providers, upload settings, and global options
+- **CLI-first**: All functionality available without configuration files
+- Default values for providers (with official BuzzHeavier URLs), upload settings, and global options
 
 #### 4. Provider System (`pkg/providers/`)
-- **factory.go**: Factory pattern for creating provider instances from configuration
+- **factory.go**: Factory pattern for creating provider instances from configuration or defaults
+- **CreateAllProviders()**: New method for CLI-first provider access without config
 - Individual provider packages implement the `Provider` interface
-- Currently supports BuzzHeavier provider
+- Currently supports BuzzHeavier provider with built-in official URL defaults
 
 ### Key Interfaces
 
@@ -79,25 +103,44 @@ type Uploader interface {
 - Progress is tracked via a custom `progressReader` that wraps file readers
 
 ### Provider Implementation (BuzzHeavier)
-- Implements PUT-based file uploads to BuzzHeavier service
+- Implements PUT-based file uploads to BuzzHeavier service with built-in official URLs
 - Constructs download URLs from API response IDs
 - Full test coverage with mock HTTP servers
-- Configurable timeouts and base URLs
+- Configurable timeouts and base URLs (optional - defaults to official endpoints)
 
-### Configuration Schema
+### Configuration Schema (Optional)
 ```yaml
+# NOTE: Configuration is optional - use --all flag for CLI-first operation
 concurrency: int          # Max parallel uploads
 verbose: bool            # Verbose logging
 output: string           # text or json
 providers:
   - name: string         # Provider name
-    enabled: bool        # Enable/disable provider
-    settings: map        # Provider-specific settings
+    enabled: bool        # Enable/disable provider (ignored with --all flag)
+    settings: map        # Provider-specific settings (optional - defaults used)
 upload:
   retry_attempts: int    # Number of retry attempts
   retry_delay: duration # Delay between retries
   chunk_size: int64      # Upload chunk size
   timeout: duration      # Upload timeout
+```
+
+### CLI Command Structure
+```bash
+woof upload [flags]
+
+# Required flags (must specify files and/or folders):
+-f, --file strings     # Files to upload (supports glob patterns)
+-d, --folder strings   # Folders to upload
+
+# Provider selection:
+--all                   # Use all available providers (no config needed)
+--providers strings     # Specific providers to require
+
+# Global options:
+-c, --concurrency int   # Max parallel uploads
+-o, --output string     # Output format (text, json)
+-v, --verbose           # Verbose logging
 ```
 
 ## Development Notes
@@ -106,15 +149,27 @@ upload:
 1. Create a new package under `pkg/providers/`
 2. Implement the `Provider` interface
 3. Add factory case in `pkg/providers/factory.go`
-4. Add provider configuration defaults in `internal/config/config.go`
-5. Write comprehensive tests with mock HTTP servers
+4. Add provider to `CreateAllProviders()` method for `--all` flag support
+5. Add provider configuration defaults in `internal/config/config.go` (optional)
+6. Write comprehensive tests with mock HTTP servers
+7. Test CLI integration without configuration using the new flag system
 
 ### Code Organization
 - Internal packages (`internal/`) are for application-private code
 - Public packages (`pkg/`) are for reusable components like providers
 - Clear separation between CLI logic, core functionality, and extensions
+- **CLI-First Architecture**: Flag-driven command interface with configuration as optional enhancement
 
-### Error Handling
+### Error Handling & Validation
 - Structured error wrapping with context using `fmt.Errorf`
 - Individual file upload failures don't abort the entire operation
+- **Path Validation**: Strict checking that `--file` flags point to files and `--folder` flags point to directories
+- **Helpful Error Messages**: Clear guidance on missing arguments, invalid paths, and configuration options
 - Provider fallbacks: tries each provider until one succeeds
+- Progress bar improvements: Handles edge cases for percentage calculations
+
+### Testing Strategy
+- **Unit Tests**: Core functionality tests for helpers like `expandGlobPatterns()` and `validatePaths()`
+- **CLI Integration Tests**: Test flag parsing, validation, and error scenarios
+- **Mock Provider Tests**: Isolate provider logic from network dependencies
+- **End-to-End**: Full command execution with real flag combinations

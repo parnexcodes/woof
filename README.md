@@ -5,13 +5,15 @@ High-performance parallel file uploader CLI in Go with Cobra.
 ## Features
 
 - High-performance concurrent uploads using Go goroutines
-- Support for files and directories
-- Multiple file hosting providers
+- CLI-first design - no configuration required
+- Support for files and directories with explicit flag separation
+- Glob pattern support for flexible file selection
+- Multiple file hosting providers with provider selection
 - Real-time progress tracking
 - Multiple output formats (text, JSON)
-- Configurable via YAML files or environment variables
+- Optional YAML configuration for advanced users
 - Retry mechanism with backoff
-- Piping support for integration with other tools
+- Strict validation with helpful error messages
 
 ## Installation
 
@@ -24,39 +26,57 @@ go install github.com/parnexcodes/woof@latest
 ### Basic Upload
 
 ```bash
-# Upload a single file
-woof upload file.txt
+# Upload a single file using the --file flag
+woof upload -f file.txt
 
 # Upload multiple files
-woof upload file1.txt file2.txt file3.txt
+woof upload -f file1.txt -f file2.txt -f file3.txt
 
-# Upload directory
-woof upload ./uploads/
+# Upload using glob patterns
+woof upload -f "*.txt" -f "./logs/*.log"
+
+# Upload a directory using the --folder flag
+woof upload -d ./uploads/
+
+# Use all available providers
+woof upload --all -f "*.pdf"
+
+# Use specific provider
+woof upload --providers buzzheavier -f document.txt
+
+# Mixed files and folders
+woof upload --all -f "*.go" -d ./backups -f README.md
 
 # Upload with custom concurrency
-woof upload -c 10 ./large_files/
+woof upload --all -c 10 -f ./large_files/*
 
 # Upload with JSON output
-woof upload -o json ./files/
+woof upload --all -o json -f ./files/*
+
+# Get help
+woof upload --help
 ```
 
-### Configuration
+### Configuration (Optional)
 
-Create a `.woof.yaml` file in your current directory or home directory:
+Woof works out-of-the-box without any configuration. However, for advanced users, you can create a `.woof.yaml` file in your current directory or home directory:
 
 ```yaml
+# Global settings
 concurrency: 5
 verbose: false
 output: "text"
 
+# Provider configuration
 providers:
   - name: "buzzheavier"
     enabled: true
     settings:
-      upload_url: "https://w.buzzheavier.com"
-      download_base_url: "https://buzzheavier.com"
+      upload_url: "https://w.buzzheavier.com"  # Optional - defaults to official URL
+      download_base_url: "https://buzzheavier.com"  # Optional - defaults to official URL
       timeout: "10m"
 
+# Upload settings
 upload:
   retry_attempts: 3
   retry_delay: "2s"
@@ -64,11 +84,37 @@ upload:
   timeout: "30m"
 ```
 
+**Note:** Most users don't need configuration! You can use all features directly from CLI:
+- `--all` to use all available providers
+- `--providers` for specific providers
+- `--file`/`--folder` for uploads with glob support
+
 ### Available Providers
 
 - **BuzzHeavier**: File hosting service with PUT-based uploads
-  - Enabled by setting `enabled: true` in configuration
-  - Use with `-p buzzheavier` flag or enable all providers
+  - Works out-of-the-box with default URLs (no config needed)
+  - Use with `--providers buzzheavier` flag or `--all` to include all providers
+
+### Upload Command
+
+```bash
+woof upload [flags]
+```
+
+**Flags:**
+- `--all`: Use all available providers regardless of configuration
+- `-f, --file strings`: Files to upload (can be used multiple times, supports glob patterns)
+- `-d, --folder strings`: Folders to upload (can be used multiple times)
+- `--providers strings`: Specific providers to use
+- `-c, --concurrency int`: Maximum number of parallel uploads (default: 5)
+- `-o, --output string`: Output format (text, json) (default: text)
+- `--retry-attempts int`: Number of retry attempts per file (default: 3)
+- `--retry-delay duration`: Delay between retry attempts (default: 2s)
+- `--progress`: Show upload progress (default: true)
+- `-v, --verbose`: Verbose output
+
+**Global Flags:**
+- `--config string`: Config file (default is $HOME/.woof.yaml)
 
 ## Project Structure
 
@@ -92,18 +138,14 @@ woof/
 
 ### Upload
 
-Upload files and directories to hosting providers:
-```bash
-woof upload [files/directories...] [flags]
-```
+Upload files and directories to hosting providers with new flag-based interface:
 
-Options:
-- `-c, --concurrency int`: Maximum number of parallel uploads (default: 5)
-- `-o, --output string`: Output format (text, json) (default: text)
-- `-p, --providers strings`: Specific providers to use
-- `--retry-attempts int`: Number of retry attempts per file (default: 3)
-- `--retry-delay duration`: Delay between retry attempts (default: 2s)
-- `--progress`: Show upload progress (default: true)
+```bash
+# Basic usage - requires explicit file/folder flags
+woof upload -f file.txt --all
+woof upload -f "*.pdf" -d ./documents
+woof upload --providers buzzheavier -d ./backups
+```
 
 ### Version
 
@@ -130,9 +172,12 @@ go test ./...
 
 The project follows Go best practices with:
 
+- **CLI-First Design**: No configuration required - all features accessible via flags
 - **Modular Design**: Clear separation of concerns between uploader, configuration, and output handling
 - **Concurrent Processing**: Semaphore-controlled goroutine pools for parallel uploads
 - **Interface-Based Design**: Easy extensibility for new file hosting providers
+- **Strict Validation**: Path validation and helpful error messages
+- **Glob Pattern Support**: Built-in wildcard pattern matching for files
 - **Error Handling**: Structured error handling with proper error propagation
 - **Progress Tracking**: Real-time progress reporting via channels
 

@@ -73,3 +73,18 @@ func (f *Factory) CreateProvidersFromNames(providerNames []string, allConfigs []
 
 	return f.CreateProviders(selectedConfigs)
 }
+
+// CreateAllProviders creates all available providers regardless of enabled status
+func (f *Factory) CreateAllProviders() ([]uploader.Provider, error) {
+	// Define all available providers with default settings
+	var providers []uploader.Provider
+
+	// BuzzHeavier provider with default settings
+	buzzProvider, err := buzzheavier.New(map[string]interface{}{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create buzzheavier provider: %w", err)
+	}
+	providers = append(providers, buzzProvider)
+
+	return providers, nil
+}

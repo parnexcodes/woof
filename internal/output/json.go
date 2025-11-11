@@ -125,13 +125,28 @@ func (t *TextHandler) HandleResult(result uploader.UploadResult) error {
 func (t *TextHandler) HandleProgress(progress uploader.ProgressInfo) error {
 	// Simple progress bar for text output
 	barWidth := 40
-	filled := int(progress.Percentage / 100.0 * float64(barWidth))
+
+	// Handle edge cases for percentage
+	percentage := progress.Percentage
+	if percentage < 0 {
+		percentage = 0
+	} else if percentage > 100 {
+		percentage = 100
+	}
+
+	filled := int(percentage / 100.0 * float64(barWidth))
+	if filled < 0 {
+		filled = 0
+	} else if filled > barWidth {
+		filled = barWidth
+	}
+
 	bar := strings.Repeat("=", filled) + strings.Repeat(" ", barWidth-filled)
 
 	fmt.Fprintf(t.output, "\r[%s] %s %.1f%% (%s/%s)",
 		bar,
 		progress.FileName,
-		progress.Percentage,
+		percentage,
 		formatBytes(progress.BytesUploaded),
 		formatBytes(progress.TotalBytes),
 	)
