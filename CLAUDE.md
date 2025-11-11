@@ -47,7 +47,7 @@ go install github.com/parnexcodes/woof@latest
 ## Project Architecture
 
 ### High-Level Design
-Woof is a high-performance CLI file uploader built with Go and Cobra. The application uses a CLI-first, interface-based design that supports multiple file hosting providers with concurrent upload capabilities. No configuration is required - all features are accessible via command-line flags.
+Woof is a high-performance CLI file uploader built with Go and Cobra. The application uses a CLI-first, interface-based design that supports multiple file hosting providers with concurrent upload capabilities. No configuration is required - all features are accessible via command-line flags. Configuration files are opt-in and must be explicitly specified.
 
 ### Core Components
 
@@ -63,7 +63,7 @@ Woof is a high-performance CLI file uploader built with Go and Cobra. The applic
 - **Glob pattern support**: Built-in wildcards for flexible file selection
 - **Provider selection**: `--all` uses all providers, `--providers` for specific ones
 - **Strict validation**: Path validation with helpful error messages
-- **CLI-first design**: Works without any configuration; YAML is optional
+- **CLI-first design**: Works without any configuration; YAML is opt-in (must specify --config flag)
 
 #### 2. Core Upload Engine (`internal/uploader/`)
 - **uploader.go**: Core interfaces and types (Provider, Uploader, Scanner, UploadResult)
@@ -72,7 +72,7 @@ Woof is a high-performance CLI file uploader built with Go and Cobra. The applic
 
 #### 3. Configuration Management (`internal/config/`)
 - Uses Viper for optional configuration loading from YAML files and environment variables
-- Supports configuration in `$HOME/.woof.yaml` or local `.woof.yaml`
+- **Opt-in configuration**: Config files are only loaded when `--config` flag is explicitly provided
 - **CLI-first**: All functionality available without configuration files
 - Default values for providers (with official BuzzHeavier URLs), upload settings, and global options
 
@@ -110,7 +110,8 @@ type Uploader interface {
 
 ### Configuration Schema (Optional)
 ```yaml
-# NOTE: Configuration is optional - use --all flag for CLI-first operation
+# NOTE: Configuration is opt-in - must specify --config flag to load
+# Use --all flag for CLI-first operation without any config file
 concurrency: int          # Max parallel uploads
 verbose: bool            # Verbose logging
 output: string           # text or json
@@ -141,6 +142,7 @@ woof upload [flags]
 -c, --concurrency int   # Max parallel uploads
 -o, --output string     # Output format (text, json)
 -v, --verbose           # Verbose logging
+--config string         # Config file (required to use YAML configuration)
 ```
 
 ## Development Notes
@@ -158,7 +160,7 @@ woof upload [flags]
 - Internal packages (`internal/`) are for application-private code
 - Public packages (`pkg/`) are for reusable components like providers
 - Clear separation between CLI logic, core functionality, and extensions
-- **CLI-First Architecture**: Flag-driven command interface with configuration as optional enhancement
+- **CLI-First Architecture**: Flag-driven command interface with opt-in configuration via --config flag
 
 ### Error Handling & Validation
 - Structured error wrapping with context using `fmt.Errorf`

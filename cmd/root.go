@@ -32,7 +32,7 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	// Global flags
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.woof.yaml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (required to use YAML configuration)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
 	rootCmd.PersistentFlags().IntVarP(&concurrency, "concurrency", "c", 5, "maximum number of parallel uploads")
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "text", "output format (text, json)")
@@ -52,21 +52,19 @@ func init() {
 }
 
 func initConfig() {
+	// Only load config if explicitly specified via --config flag
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
+		viper.AutomaticEnv()
+
+		if err := viper.ReadInConfig(); err == nil && verbose {
+			fmt.Println("Using config file:", viper.ConfigFileUsed())
+		} else if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading config file: %v\n", err)
+			os.Exit(1)
+		}
 	} else {
-		home, err := os.UserHomeDir()
-		cobra.CheckErr(err)
-
-		viper.AddConfigPath(home)
-		viper.AddConfigPath(".")
-		viper.SetConfigType("yaml")
-		viper.SetConfigName(".woof")
-	}
-
-	viper.AutomaticEnv()
-
-	if err := viper.ReadInConfig(); err == nil && verbose {
-		fmt.Println("Using config file:", viper.ConfigFileUsed())
+		// No config file specified - use CLI flags and defaults only
+		viper.AutomaticEnv()
 	}
 }

@@ -59,7 +59,9 @@ woof upload --help
 
 ### Configuration (Optional)
 
-Woof works out-of-the-box without any configuration. However, for advanced users, you can create a `.woof.yaml` file in your current directory or home directory:
+Woof works out-of-the-box without any configuration and does **not** auto-load config files. Configuration is opt-in and must be explicitly specified with the `--config` flag.
+
+For advanced users, you can create a `.woof.yaml` file and load it explicitly:
 
 ```yaml
 # Global settings
@@ -84,10 +86,15 @@ upload:
   timeout: "30m"
 ```
 
-**Note:** Most users don't need configuration! You can use all features directly from CLI:
+**Note:** Configuration is opt-in! Most users don't need any config file. You can use all features directly from CLI:
 - `--all` to use all available providers
 - `--providers` for specific providers
 - `--file`/`--folder` for uploads with glob support
+
+To use a config file, you must specify it explicitly:
+```bash
+woof upload --config .woof.yaml --all -f "*.pdf"
+```
 
 ### Available Providers
 
@@ -114,7 +121,7 @@ woof upload [flags]
 - `-v, --verbose`: Verbose output
 
 **Global Flags:**
-- `--config string`: Config file (default is $HOME/.woof.yaml)
+- `--config string`: Config file (required to use YAML configuration)
 
 ## Project Structure
 
