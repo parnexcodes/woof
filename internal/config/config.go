@@ -62,7 +62,7 @@ func setDefaults() {
 	viper.SetDefault("providers", []ProviderConfig{
 		{
 			Name:    "buzzheavier",
-			Enabled: false,
+			Enabled: true,
 			Settings: map[string]interface{}{
 				"upload_url":        "https://w.buzzheavier.com",
 				"download_base_url": "https://buzzheavier.com",

@@ -11,6 +11,8 @@ High-performance parallel file uploader CLI in Go with Cobra.
 - Multiple file hosting providers with provider selection
 - Real-time progress tracking
 - Multiple output formats (text, JSON)
+- Enhanced logging with colorful timestamps and structured output
+- Professional logging with sirupsen/logrus
 - Optional YAML configuration for advanced users
 - Retry mechanism with backoff
 - Strict validation with helpful error messages
@@ -55,6 +57,24 @@ woof upload --all -o json -f ./files/*
 
 # Get help
 woof upload --help
+```
+
+### Enhanced Logging
+
+Woof uses professional logging with sirupsen/logrus for beautiful, informative output:
+
+```bash
+# Verbose mode shows detailed logging with colors and timestamps
+woof upload --all -v -f document.txt
+
+# Regular mode shows clean output without debug information
+woof upload --all -f *.pdf
+
+# The logging includes:
+# - Colored log levels (DEBUG, INFO, WARN, ERROR)
+# - Millisecond precision timestamps
+# - Structured fields for filtering
+# - Category-based organization (UPLOAD, NETWORK, FILES, CONFIG, CLI)
 ```
 
 ### Configuration (Optional)
@@ -134,6 +154,7 @@ woof/
 ├── internal/           # Internal packages
 │   ├── uploader/       # Core upload logic
 │   ├── config/         # Configuration management
+│   ├── logging/        # Professional logging system with logrus
 │   └── output/         # Output handlers
 ├── pkg/               # Public packages
 │   └── providers/     # File hosting providers
@@ -180,12 +201,13 @@ go test ./...
 The project follows Go best practices with:
 
 - **CLI-First Design**: No configuration required - all features accessible via flags
-- **Modular Design**: Clear separation of concerns between uploader, configuration, and output handling
+- **Modular Design**: Clear separation of concerns between uploader, configuration, logging, and output handling
+- **Professional Logging**: Structured logging with sirupsen/logrus featuring colors, timestamps, and categorical organization
 - **Concurrent Processing**: Semaphore-controlled goroutine pools for parallel uploads
 - **Interface-Based Design**: Easy extensibility for new file hosting providers
 - **Strict Validation**: Path validation and helpful error messages
 - **Glob Pattern Support**: Built-in wildcard pattern matching for files
-- **Error Handling**: Structured error handling with proper error propagation
+- **Error Handling**: Structured error handling with proper error propagation and log context
 - **Progress Tracking**: Real-time progress reporting via channels
 
 ## License

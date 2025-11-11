@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/parnexcodes/woof/internal/logging"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 )
@@ -34,27 +35,32 @@ func (u *DefaultUploader) Upload(ctx context.Context, paths []string, config Upl
 
 	// Create semaphore for concurrency control
 	sem := semaphore.NewWeighted(int64(config.Concurrency))
+	logging.ConcurrencySettings(config.Concurrency, config.Concurrency)
 
 	// Create error group
 	g, ctx := errgroup.WithContext(ctx)
 
 	// Scan for files
+	logging.FileScan(paths)
 	fileCh, errCh := u.scanner.Scan(ctx, paths)
 
-	// Start worker goroutines
-	g.Go(func() error {
+	// Start a goroutine to process files and launch uploads
+	go func() {
 		defer close(resultCh)
 		defer close(u.progressCh)
 
+		// Process all files
 		for {
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return
 
 			case fileInfo, ok := <-fileCh:
 				if !ok {
-					return nil // No more files to process
+					goto AllFilesProcessed // No more files to process
 				}
+
+				logging.FileFound(fileInfo.Name, fileInfo.Size, fileInfo.IsDir)
 
 				if fileInfo.IsDir {
 					continue // Skip directories
@@ -62,10 +68,12 @@ func (u *DefaultUploader) Upload(ctx context.Context, paths []string, config Upl
 
 				// Acquire semaphore slot
 				if err := sem.Acquire(ctx, 1); err != nil {
-					return err
+					logging.ErrorContext("semaphore_acquire", err, map[string]interface{} {
+						"file": fileInfo.Name,
+					})
+					return
 				}
 
-				// Launch upload goroutine
 				g.Go(func() error {
 					defer sem.Release(1)
 					return u.uploadFile(ctx, fileInfo, config, resultCh)
@@ -73,14 +81,17 @@ func (u *DefaultUploader) Upload(ctx context.Context, paths []string, config Upl
 
 			case err := <-errCh:
 				if err != nil {
-					return fmt.Errorf("scan error: %w", err)
+					logging.ErrorContext("scan", err, nil)
+					// Send error result but continue processing other files
+					resultCh <- UploadResult{
+						Error: fmt.Errorf("scan error: %w", err),
+					}
 				}
 			}
 		}
-	})
 
-	// Wait for all uploads to complete
-	go func() {
+	AllFilesProcessed:
+		// Wait for all upload goroutines to complete
 		if err := g.Wait(); err != nil && err != context.Canceled {
 			resultCh <- UploadResult{
 				Error: fmt.Errorf("upload failed: %w", err),
@@ -92,9 +103,15 @@ func (u *DefaultUploader) Upload(ctx context.Context, paths []string, config Upl
 }
 
 func (u *DefaultUploader) uploadFile(ctx context.Context, fileInfo FileInfo, config UploadConfig, resultCh chan<- UploadResult) error {
+	logging.UploadStart(fileInfo.Name, fileInfo.Size)
+
 	// Open file
 	file, err := os.Open(fileInfo.Path)
 	if err != nil {
+		logging.ErrorContext("file_open", err, map[string]interface{} {
+			"file": fileInfo.Name,
+			"path": fileInfo.Path,
+		})
 		resultCh <- UploadResult{
 			FileName: fileInfo.Name,
 			FilePath: fileInfo.Path,
@@ -148,9 +165,7 @@ func (u *DefaultUploader) uploadFile(ctx context.Context, fileInfo FileInfo, con
 
 		if err != nil {
 			lastErr = err
-			if config.Verbose {
-				fmt.Printf("Upload to %s failed for %s: %v\n", provider.Name(), fileInfo.Name, err)
-			}
+			logging.UploadError(fileInfo.Name, provider.Name(), err)
 			continue
 		}
 
@@ -164,6 +179,8 @@ func (u *DefaultUploader) uploadFile(ctx context.Context, fileInfo FileInfo, con
 			Duration:   duration,
 			UploadTime: time.Now(),
 		}
+
+		logging.UploadComplete(fileInfo.Name, url, duration)
 
 		select {
 		case resultCh <- result:

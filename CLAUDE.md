@@ -20,6 +20,10 @@ This ensures all packages compile correctly before running tests or committing c
 
 ### Building
 ```bash
+# Build to /out directory
+go build -o out/woof .
+
+# Or build without output directory (not recommended)
 go build -o woof .
 ```
 
@@ -37,17 +41,21 @@ go test -v ./...
 
 ### Installation
 ```bash
-# Install locally
+# Install locally (builds to $GOPATH/bin)
 go install .
 
 # Install from remote
 go install github.com/parnexcodes/woof@latest
+
+# Or build manually to /out directory and copy:
+go build -o out/woof .
+cp out/woof /usr/local/bin/
 ```
 
 ## Project Architecture
 
 ### High-Level Design
-Woof is a high-performance CLI file uploader built with Go and Cobra. The application uses a CLI-first, interface-based design that supports multiple file hosting providers with concurrent upload capabilities. No configuration is required - all features are accessible via command-line flags. Configuration files are opt-in and must be explicitly specified.
+Woof is a high-performance CLI file uploader built with Go and Cobra. The application uses a CLI-first, interface-based design that supports multiple file hosting providers with concurrent upload capabilities. Features professional logging with sirupsen/logrus for colorful, timestamped, structured output. No configuration is required - all features are accessible via command-line flags. Configuration files are opt-in and must be explicitly specified.
 
 ### Core Components
 
@@ -76,7 +84,16 @@ Woof is a high-performance CLI file uploader built with Go and Cobra. The applic
 - **CLI-first**: All functionality available without configuration files
 - Default values for providers (with official BuzzHeavier URLs), upload settings, and global options
 
-#### 4. Provider System (`pkg/providers/`)
+#### 4. Logging System (`internal/logging/`)
+- Uses sirupsen/logrus for professional structured logging
+- **Smart formatting**: Colored text for TTY, JSON for non-TTY output
+- **Categorized logging**: UPLOAD, NETWORK, FILES, CONFIG, CLI, ERROR categories
+- **Rich timestamps**: Millisecond precision timestamps in verbose mode
+- **Structured fields**: Key-value pairs for filtering and parsing
+- **Level control**: Debug level in verbose mode, Error level otherwise
+- **Clean output**: No caller clutter, user-friendly formatting
+
+#### 5. Provider System (`pkg/providers/`)
 - **factory.go**: Factory pattern for creating provider instances from configuration or defaults
 - **CreateAllProviders()**: New method for CLI-first provider access without config
 - Individual provider packages implement the `Provider` interface
@@ -141,9 +158,18 @@ woof upload [flags]
 # Global options:
 -c, --concurrency int   # Max parallel uploads
 -o, --output string     # Output format (text, json)
--v, --verbose           # Verbose logging
+-v, --verbose           # Verbose logging (shows colored timestamps and structured output)
 --config string         # Config file (required to use YAML configuration)
 ```
+
+### Logging Features
+The `--verbose/-v` flag enables professional logging with:
+- **Colored output**: Level-based coloring (Debug=white, Info=cyan, Error=red)
+- **Timestamps**: Millisecond precision timestamps in `YYYY-MM-DD HH:MM:SS.mmm` format
+- **Structured fields**: Key-value pairs like `category=UPLOAD filename=document.txt duration_ms=1234`
+- **Category organization**: UPLOAD, NETWORK, FILES, CONFIG, CLI, ERROR
+- **Smart formatting**: Text format for terminals, JSON for piping
+- **Clean mode**: Non-verbose shows only essential output without debug information
 
 ## Development Notes
 
@@ -159,8 +185,16 @@ woof upload [flags]
 ### Code Organization
 - Internal packages (`internal/`) are for application-private code
 - Public packages (`pkg/`) are for reusable components like providers
-- Clear separation between CLI logic, core functionality, and extensions
+- Clear separation between CLI logic, core functionality, logging, and extensions
 - **CLI-First Architecture**: Flag-driven command interface with opt-in configuration via --config flag
+
+**Package Structure:**
+- `internal/logging/`: Professional logging wrapper around sirupsen/logrus
+- `internal/uploader/`: Core upload engine with concurrency control
+- `internal/config/`: Configuration management and validation
+- `internal/output/`: Result formatting and progress display
+- `cmd/`: CLI commands and user interface
+- `pkg/providers/`: File hosting provider implementations
 
 ### Error Handling & Validation
 - Structured error wrapping with context using `fmt.Errorf`
@@ -170,8 +204,30 @@ woof upload [flags]
 - Provider fallbacks: tries each provider until one succeeds
 - Progress bar improvements: Handles edge cases for percentage calculations
 
+### Using the Logging System
+The logging system is initialized in `cmd/upload.go` and provides category-based logging:
+
+```go
+// Logging is automatically initialized with verbose flag
+logging.Init(viper.GetBool("verbose"), os.Stderr)
+
+// Use category-specific logging functions
+logging.UploadStart(filename, size)
+logging.ConfigLoad(source, values)
+logging.HTTPRequest(method, url, headers)
+logging.FileValidation(path, validationType, error)
+```
+
+**Available Categories:**
+- `UPLOAD`: Upload operations, progress, completion
+- `NETWORK`: HTTP requests, responses, API calls
+- `FILES`: File scanning, validation, discovery
+- `CONFIG`: Configuration loading, provider selection
+- `CLI`: Flag processing, command execution
+- `ERROR`: Error context with structured details
+
 ### Testing Strategy
 - **Unit Tests**: Core functionality tests for helpers like `expandGlobPatterns()` and `validatePaths()`
 - **CLI Integration Tests**: Test flag parsing, validation, and error scenarios
 - **Mock Provider Tests**: Isolate provider logic from network dependencies
-- **End-to-End**: Full command execution with real flag combinations
+- **End-to-End**: Full command execution with real flag combinations including logging output

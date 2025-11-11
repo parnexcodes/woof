@@ -1,6 +1,7 @@
 package buzzheavier
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,8 @@ import (
 	"net/http"
 	"path/filepath"
 	"time"
+
+	"github.com/parnexcodes/woof/internal/logging"
 )
 
 // BuzzHeavierResponse represents the API response format
@@ -44,8 +47,20 @@ func New(config map[string]interface{}) (*BuzzHeavierProvider, error) {
 	}
 	timeout, err := time.ParseDuration(timeoutStr)
 	if err != nil {
-	 timeout = 10 * time.Minute // Default timeout
+		timeout = 10 * time.Minute // Default timeout
+		logging.ErrorContext("provider_config", err, map[string]interface{}{
+			"provider": "BuzzHeavier",
+			"setting":  "timeout",
+			"value":    timeoutStr,
+		})
 	}
+
+	providerConfig := map[string]interface{}{
+		"upload_url":        uploadURL,
+		"download_base_url": downloadBaseURL,
+		"timeout":           timeout.String(),
+	}
+	logging.ProviderConfig("BuzzHeavier", providerConfig)
 
 	return &BuzzHeavierProvider{
 		UploadURL:       uploadURL,
@@ -68,31 +83,67 @@ func (p *BuzzHeavierProvider) Upload(ctx context.Context, filePath string, file 
 	filename := filepath.Base(filePath)
 	uploadURL := fmt.Sprintf("%s/%s", p.UploadURL, filename)
 
-	// Create HTTP request with context
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, uploadURL, file)
+	// Read entire content to ensure we have the complete data and correct size
+	buf, err := io.ReadAll(file)
 	if err != nil {
+		logging.ErrorContext("file_read", err, map[string]interface{}{
+			"file":  filename,
+			"size":  size,
+		})
+		return "", fmt.Errorf("failed to read file: %w", err)
+	}
+	actualSize := int64(len(buf))
+
+	// Create HTTP request with context
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, uploadURL, bytes.NewReader(buf))
+	if err != nil {
+		logging.ErrorContext("http_request_create", err, map[string]interface{}{
+			"method": http.MethodPut,
+			"url":    uploadURL,
+		})
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Set content type
+	// Set content type and content length
 	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("Content-Length", fmt.Sprintf("%d", actualSize))
 
-	// Make request
+	// Log HTTP request details
+	logging.HTTPRequest(http.MethodPut, uploadURL, map[string]string{
+		"Content-Type":   "application/octet-stream",
+		"Content-Length": fmt.Sprintf("%d", actualSize),
+	})
+
+	// Make request and measure duration
+	start := time.Now()
 	resp, err := p.HTTPClient.Do(req)
+	duration := time.Since(start)
+
 	if err != nil {
+		logging.ErrorContext("http_request", err, map[string]interface{}{
+			"url": uploadURL,
+		})
 		return "", fmt.Errorf("failed to upload file: %w", err)
 	}
 	defer resp.Body.Close()
 
+	// Read response body for debugging
+	responseBody, _ := io.ReadAll(resp.Body)
+
+	// Log HTTP response
+	logging.HTTPResponse(resp.StatusCode, string(responseBody), duration)
+
 	// Check response status
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("upload failed with status %d: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("upload failed with status %d: %s", resp.StatusCode, string(responseBody))
 	}
 
-	// Parse JSON response
+	// Parse JSON response (from already read body)
 	var response BuzzHeavierResponse
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+	if err := json.Unmarshal(responseBody, &response); err != nil {
+		logging.ErrorContext("json_parse", err, map[string]interface{}{
+			"response": string(responseBody),
+		})
 		return "", fmt.Errorf("failed to parse response: %w", err)
 	}
 

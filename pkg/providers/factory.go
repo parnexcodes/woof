@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/parnexcodes/woof/internal/config"
+	"github.com/parnexcodes/woof/internal/logging"
 	"github.com/parnexcodes/woof/internal/uploader"
 	"github.com/parnexcodes/woof/pkg/providers/buzzheavier"
 )
@@ -19,11 +20,25 @@ func NewFactory() *Factory {
 
 // CreateProvider creates a provider instance from configuration
 func (f *Factory) CreateProvider(providerConfig config.ProviderConfig) (uploader.Provider, error) {
+	logging.ProviderConfig(providerConfig.Name, providerConfig.Settings)
+
 	switch strings.ToLower(providerConfig.Name) {
 	case "buzzheavier":
-		return buzzheavier.New(providerConfig.Settings)
+		provider, err := buzzheavier.New(providerConfig.Settings)
+		if err != nil {
+			logging.ErrorContext("provider_creation", err, map[string]interface{}{
+				"provider": providerConfig.Name,
+				"settings": providerConfig.Settings,
+			})
+			return nil, fmt.Errorf("failed to create provider '%s': %w", providerConfig.Name, err)
+		}
+		return provider, nil
 	default:
-		return nil, fmt.Errorf("unknown provider: %s", providerConfig.Name)
+		err := fmt.Errorf("unknown provider: %s", providerConfig.Name)
+		logging.ErrorContext("provider_creation", err, map[string]interface{}{
+			"provider": providerConfig.Name,
+		})
+		return nil, err
 	}
 }
 
@@ -33,12 +48,13 @@ func (f *Factory) CreateProviders(providerConfigs []config.ProviderConfig) ([]up
 
 	for _, providerConfig := range providerConfigs {
 		if !providerConfig.Enabled {
+			logging.ProviderConfig(providerConfig.Name, map[string]interface{}{"enabled": false})
 			continue
 		}
 
 		provider, err := f.CreateProvider(providerConfig)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create provider '%s': %w", providerConfig.Name, err)
+			return nil, err
 		}
 
 		providers = append(providers, provider)
@@ -80,8 +96,12 @@ func (f *Factory) CreateAllProviders() ([]uploader.Provider, error) {
 	var providers []uploader.Provider
 
 	// BuzzHeavier provider with default settings
+	logging.ProviderConfig("buzzheavier", map[string]interface{}{"mode": "all_providers_defaults"})
 	buzzProvider, err := buzzheavier.New(map[string]interface{}{})
 	if err != nil {
+		logging.ErrorContext("create_all_providers", err, map[string]interface{}{
+			"provider": "buzzheavier",
+		})
 		return nil, fmt.Errorf("failed to create buzzheavier provider: %w", err)
 	}
 	providers = append(providers, buzzProvider)

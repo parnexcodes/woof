@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/parnexcodes/woof/internal/logging"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -57,8 +58,12 @@ func initConfig() {
 		viper.SetConfigFile(cfgFile)
 		viper.AutomaticEnv()
 
-		if err := viper.ReadInConfig(); err == nil && verbose {
-			fmt.Println("Using config file:", viper.ConfigFileUsed())
+		if err := viper.ReadInConfig(); err == nil {
+			if verbose {
+				// Use logging system for config file announcement
+				logging.Init(verbose, os.Stderr)
+				logging.ConfigLoad(viper.ConfigFileUsed(), nil)
+			}
 		} else if err != nil {
 			fmt.Fprintf(os.Stderr, "Error reading config file: %v\n", err)
 			os.Exit(1)
@@ -66,5 +71,10 @@ func initConfig() {
 	} else {
 		// No config file specified - use CLI flags and defaults only
 		viper.AutomaticEnv()
+		if verbose {
+			// Initialize logging to avoid nil pointer when no config file but verbose is set
+			logging.Init(verbose, os.Stderr)
+			logging.ConfigLoad("CLI flags only", nil)
+		}
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/parnexcodes/woof/internal/config"
+	"github.com/parnexcodes/woof/internal/logging"
 	"github.com/parnexcodes/woof/internal/output"
 	"github.com/parnexcodes/woof/internal/uploader"
 	providerpkg "github.com/parnexcodes/woof/pkg/providers"
@@ -82,22 +83,32 @@ func validatePaths(files []string, folders []string) error {
 	for _, file := range files {
 		if info, err := os.Stat(file); err != nil {
 			if os.IsNotExist(err) {
+				logging.FileValidation(file, "file_existence", fmt.Errorf("file does not exist"))
 				return fmt.Errorf("file does not exist: %s", file)
 			}
+			logging.FileValidation(file, "file_check", err)
 			return fmt.Errorf("error checking file %s: %w", file, err)
 		} else if info.IsDir() {
+			logging.FileValidation(file, "file_type", fmt.Errorf("path is directory"))
 			return fmt.Errorf("path '%s' is a directory, but --file flag requires a file. Use --folder/-d for directories", file)
+		} else {
+			logging.FileValidation(file, "file_check", nil)
 		}
 	}
 
 	for _, folder := range folders {
 		if info, err := os.Stat(folder); err != nil {
 			if os.IsNotExist(err) {
+				logging.FileValidation(folder, "folder_existence", fmt.Errorf("directory does not exist"))
 				return fmt.Errorf("directory does not exist: %s", folder)
 			}
+			logging.FileValidation(folder, "folder_check", err)
 			return fmt.Errorf("error checking directory %s: %w", folder, err)
 		} else if !info.IsDir() {
+			logging.FileValidation(folder, "folder_type", fmt.Errorf("path is file"))
 			return fmt.Errorf("path '%s' is a file, but --folder/-d flag requires a directory. Use --file/-f for files", folder)
+		} else {
+			logging.FileValidation(folder, "folder_check", nil)
 		}
 	}
 
@@ -105,10 +116,16 @@ func validatePaths(files []string, folders []string) error {
 }
 
 func runUpload(cmd *cobra.Command, args []string) error {
+	// Initialize logging system with verbose flag
+	logging.Init(viper.GetBool("verbose"), os.Stderr)
+
 	// Validate flags
 	if len(files) == 0 && len(folders) == 0 {
 		return fmt.Errorf("no files or folders specified. Use --file/-f for files or --folder/-d for directories")
 	}
+
+	logging.FlagProcessing("files", len(files))
+	logging.FlagProcessing("folders", len(folders))
 
 	// Expand glob patterns for files
 	expandedFiles, err := expandGlobPatterns(files)
@@ -125,10 +142,26 @@ func runUpload(cmd *cobra.Command, args []string) error {
 	paths := append(expandedFiles, folders...)
 
 	// Load configuration
+	configSource := "CLI flags only"
+	if viper.ConfigFileUsed() != "" {
+		configSource = viper.ConfigFileUsed()
+	}
+	logging.ConfigLoad(configSource, nil)
+
 	cfg, err := config.LoadConfig()
 	if err != nil {
+		logging.ErrorContext("config_load", err, map[string]interface{}{
+			"source": configSource,
+		})
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
+
+	logging.ConfigLoad("effective_values", map[string]interface{}{
+		"concurrency": cfg.Concurrency,
+		"verbose":     cfg.Verbose,
+		"output":      cfg.Output,
+		"providers_count": len(cfg.Providers),
+	})
 
 	// Create context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
@@ -150,20 +183,34 @@ func runUpload(cmd *cobra.Command, args []string) error {
 
 	// Get provider instances using the new hierarchy
 	var providerList []uploader.Provider
+	var providerMode string
+	var providerNames []string
+
 	if useAll {
 		// Use all available providers regardless of configuration
 		providerList, err = factory.CreateAllProviders()
+		providerMode = "all"
 	} else if len(providers) > 0 {
 		// Use specified providers
 		providerList, err = factory.CreateProvidersFromNames(providers, cfg.Providers)
+		providerMode = "specified"
+		providerNames = providers
 	} else {
 		// Use all enabled providers from configuration
 		providerList, err = factory.CreateProviders(cfg.GetEnabledProviders())
+		providerMode = "enabled"
 	}
 
 	if err != nil {
 		return fmt.Errorf("failed to create providers: %w", err)
 	}
+
+	// Extract provider names for debug output
+	for _, provider := range providerList {
+		providerNames = append(providerNames, provider.Name())
+	}
+
+	logging.ProviderSelection(providerMode, providerNames)
 
 	if len(providerList) == 0 {
 		var helpMsg strings.Builder
