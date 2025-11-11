@@ -75,8 +75,27 @@ Woof is a high-performance CLI file uploader built with Go and Cobra. The applic
 
 #### 2. Core Upload Engine (`internal/uploader/`)
 - **uploader.go**: Core interfaces and types (Provider, Uploader, Scanner, UploadResult)
+  - Provider interface now returns structured `ProviderResponse` with metadata
+  - UploadResult includes both URL and full ProviderResponse
 - **pool.go**: DefaultUploader implementation with semaphore-controlled concurrency using errgroup
+  - Handles new structured provider responses
+  - Maintains backward compatibility with URL field
 - **scanner.go**: File and directory scanning implementation
+
+#### 2.5. Provider System (`internal/providers/`)
+- **types.go**: ProviderResponse structure and typed error system
+  - `ProviderResponse`: Structured upload responses with URL, metadata, provider data
+  - `ProviderError`: Typed errors with categories (Network, API, Authentication, etc.)
+  - Error helpers for consistent error creation and handling
+- **base.go**: Base provider implementation with common functionality
+  - HTTP operations with standardized error handling
+  - File validation and capability checking
+  - Response parsing and metadata helper methods
+- **wrapper.go**: Consistency wrapper for standardized provider behavior
+  - Pre-upload validation with capability checking
+  - Automatic retry logic with exponential backoff
+  - Response enhancement and standardization
+  - Configurable behavior (validation, retries, metadata)
 
 #### 3. Configuration Management (`internal/config/`)
 - Uses Viper for optional configuration loading from YAML files and environment variables
@@ -95,16 +114,35 @@ Woof is a high-performance CLI file uploader built with Go and Cobra. The applic
 
 #### 5. Provider System (`pkg/providers/`)
 - **factory.go**: Factory pattern for creating provider instances from configuration or defaults
-- **CreateAllProviders()**: New method for CLI-first provider access without config
+  - `CreateAllProviders()`: New method for CLI-first provider access without config
+  - Automatic consistency wrapper application with configurable settings
+  - Support for creating providers with/without consistency wrapper
+- **buzzheavier/**: BuzzHeavier provider implementation
+  - Implements the new structured Provider interface
+  - Returns rich ProviderResponse with metadata (upload duration, file size, etc.)
+  - Proper error categorization and structured error handling
+  - Built-in official URL defaults (no config required)
 - Individual provider packages implement the `Provider` interface
-- Currently supports BuzzHeavier provider with built-in official URL defaults
 
 ### Key Interfaces
 
 ```go
 type Provider interface {
     Name() string
-    Upload(ctx context.Context, filePath string, file io.Reader, size int64) (string, error)
+    Upload(ctx context.Context, filePath string, file io.Reader, size int64) (*ProviderResponse, error)
+    ValidateFile(ctx context.Context, filePath string, size int64) error
+    GetMaxFileSize() int64
+    GetSupportedExtensions() []string
+}
+
+type ProviderResponse struct {
+    URL          string            `json:"url"`
+    DownloadURL  string            `json:"download_url,omitempty"`
+    DeleteURL    string            `json:"delete_url,omitempty"`
+    ID           string            `json:"id,omitempty"`
+    Expires      *time.Time        `json:"expires,omitempty"`
+    Metadata     map[string]string `json:"metadata,omitempty"`
+    ProviderData interface{}       `json:"provider_data,omitempty"`
 }
 
 type Uploader interface {
@@ -120,10 +158,21 @@ type Uploader interface {
 - Progress is tracked via a custom `progressReader` that wraps file readers
 
 ### Provider Implementation (BuzzHeavier)
-- Implements PUT-based file uploads to BuzzHeavier service with built-in official URLs
+- Implements structured Provider interface with rich metadata responses
+- PUT-based file uploads to BuzzHeavier service with built-in official URLs
 - Constructs download URLs from API response IDs
+- Returns ProviderResponse with upload metadata (duration, size timestamps, etc.)
+- Structured error handling with proper categorization and retry information
 - Full test coverage with mock HTTP servers
-- Configurable timeouts and base URLs (optional - defaults to official endpoints)
+- Configurable timeouts, max file sizes, and base URLs (optional - defaults to official endpoints)
+
+### Provider Consistency System
+- **Structured Responses**: All providers return consistent `ProviderResponse` objects
+- **Automatic Validation**: File size, extension, and provider capability checking
+- **Retry Logic**: Exponential backoff for retryable errors with configurable attempts
+- **Error Categorization**: Typed errors with retryability and context information
+- **Metadata Enhancement**: Automatic addition of upload timestamps, file info, provider details
+- **Consistency Wrapper**: Optional wrapper that ensures standardized behavior across providers
 
 ### Configuration Schema (Optional)
 ```yaml
@@ -175,12 +224,25 @@ The `--verbose/-v` flag enables professional logging with:
 
 ### Adding New Providers
 1. Create a new package under `pkg/providers/`
-2. Implement the `Provider` interface
-3. Add factory case in `pkg/providers/factory.go`
-4. Add provider to `CreateAllProviders()` method for `--all` flag support
-5. Add provider configuration defaults in `internal/config/config.go` (optional)
-6. Write comprehensive tests with mock HTTP servers
-7. Test CLI integration without configuration using the new flag system
+2. Implement the `Provider` interface:
+   - `Name()`: Return provider name
+   - `Upload()`: Return structured `*ProviderResponse, error`
+   - `ValidateFile()`: Pre-upload validation
+   - `GetMaxFileSize()`: Return supported max file size
+   - `GetSupportedExtensions()`: Return supported file extensions
+3. Use the internal base provider utilities for common HTTP operations and error handling
+4. Add factory case in `pkg/providers/factory.go`
+5. Add provider to `CreateAllProviders()` method for `--all` flag support
+6. Add provider configuration defaults in `internal/config/config.go` (optional)
+7. Write comprehensive tests with mock HTTP servers
+8. Test CLI integration without configuration using the new flag system
+
+**Provider Implementation Guidelines:**
+- Use structured responses with metadata (upload duration, timestamps, etc.)
+- Categorize errors using the provider error types (`ErrorTypeNetwork`, `ErrorTypeAPI`, etc.)
+- Implement proper file validation and capability reporting
+- Include provider-specific data in `ProviderResponse.ProviderData`
+- Use the base provider helper methods for HTTP operations and logging
 
 ### Code Organization
 - Internal packages (`internal/`) are for application-private code
@@ -191,10 +253,13 @@ The `--verbose/-v` flag enables professional logging with:
 **Package Structure:**
 - `internal/logging/`: Professional logging wrapper around sirupsen/logrus
 - `internal/uploader/`: Core upload engine with concurrency control
+- `internal/providers/`: Provider system infrastructure (types, base, wrapper)
 - `internal/config/`: Configuration management and validation
 - `internal/output/`: Result formatting and progress display
 - `cmd/`: CLI commands and user interface
 - `pkg/providers/`: File hosting provider implementations
+  - `buzzheavier/`: BuzzHeavier provider implementation
+  - `factory.go`: Provider factory with consistency wrapper support
 
 ### Error Handling & Validation
 - Structured error wrapping with context using `fmt.Errorf`

@@ -160,13 +160,19 @@ func (u *DefaultUploader) uploadFile(ctx context.Context, fileInfo FileInfo, con
 		}
 
 		// Upload to provider
-		url, err := provider.Upload(ctx, fileInfo.Path, progressReader, fileInfo.Size)
+		response, err := provider.Upload(ctx, fileInfo.Path, progressReader, fileInfo.Size)
 		duration := time.Since(start)
 
 		if err != nil {
 			lastErr = err
 			logging.UploadError(fileInfo.Name, provider.Name(), err)
 			continue
+		}
+
+		// Extract URL from response
+		url := ""
+		if response != nil {
+			url = response.URL
 		}
 
 		// Success!
@@ -178,6 +184,7 @@ func (u *DefaultUploader) uploadFile(ctx context.Context, fileInfo FileInfo, con
 			Provider:   provider.Name(),
 			Duration:   duration,
 			UploadTime: time.Now(),
+			Response:   response,
 		}
 
 		logging.UploadComplete(fileInfo.Name, url, duration)

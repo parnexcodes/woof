@@ -2,6 +2,8 @@
 
 High-performance parallel file uploader CLI in Go with Cobra.
 
+> **⚠️ Development Status**: This project is currently in active development. Expect major changes and potential breaking updates before the v1.0 release. Features are being added rapidly and the CLI interface may evolve significantly during this phase.
+
 ## Features
 
 - High-performance concurrent uploads using Go goroutines
@@ -9,6 +11,9 @@ High-performance parallel file uploader CLI in Go with Cobra.
 - Support for files and directories with explicit flag separation
 - Glob pattern support for flexible file selection
 - Multiple file hosting providers with provider selection
+- Structured provider responses with metadata and rich error information
+- Automatic file validation, retry logic, and capability checking
+- Provider consistency wrapper with standardized behavior
 - Real-time progress tracking
 - Multiple output formats (text, JSON)
 - Enhanced logging with colorful timestamps and structured output
@@ -152,12 +157,13 @@ woof/
 │   ├── upload.go       # Upload command
 │   └── version.go      # Version command
 ├── internal/           # Internal packages
-│   ├── uploader/       # Core upload logic
+│   ├── uploader/       # Core upload logic with provider interfaces
+│   ├── providers/      # Provider system (types, base provider, consistency wrapper)
 │   ├── config/         # Configuration management
 │   ├── logging/        # Professional logging system with logrus
 │   └── output/         # Output handlers
 ├── pkg/               # Public packages
-│   └── providers/     # File hosting providers
+│   └── providers/     # File hosting provider implementations (BuzzHeavier, factory)
 ├── main.go            # Application entry point
 └── go.mod             # Go module definition
 ```
@@ -205,7 +211,10 @@ The project follows Go best practices with:
 - **Professional Logging**: Structured logging with sirupsen/logrus featuring colors, timestamps, and categorical organization
 - **Concurrent Processing**: Semaphore-controlled goroutine pools for parallel uploads
 - **Interface-Based Design**: Easy extensibility for new file hosting providers
-- **Strict Validation**: Path validation and helpful error messages
+- **Provider Consistency System**: Structured responses, automatic validation, retry logic, and standardized error handling
+- **Rich Provider Responses**: Upload responses include metadata, URLs, deletion links, expiration info, and provider-specific data
+- **Typed Error System**: Categorized errors with retryability information and structured context
+- **Strict Validation**: Path validation, file size limits, and provider capability checking
 - **Glob Pattern Support**: Built-in wildcard pattern matching for files
 - **Error Handling**: Structured error handling with proper error propagation and log context
 - **Progress Tracking**: Real-time progress reporting via channels

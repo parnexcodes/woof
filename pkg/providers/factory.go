@@ -7,24 +7,59 @@ import (
 	"github.com/parnexcodes/woof/internal/config"
 	"github.com/parnexcodes/woof/internal/logging"
 	"github.com/parnexcodes/woof/internal/uploader"
+	providerpkg "github.com/parnexcodes/woof/internal/providers"
 	"github.com/parnexcodes/woof/pkg/providers/buzzheavier"
 )
 
 // Factory creates provider instances based on configuration
-type Factory struct{}
+type Factory struct {
+	wrapperConfig providerpkg.WrapperConfig
+}
+
+// FactoryConfig holds configuration for the factory
+type FactoryConfig struct {
+	EnableConsistencyWrapper bool                       `json:"enable_consistency_wrapper"`
+	WrapperConfig            providerpkg.WrapperConfig    `json:"wrapper_config"`
+}
+
+// DefaultFactoryConfig returns sensible defaults for factory configuration
+func DefaultFactoryConfig() FactoryConfig {
+	return FactoryConfig{
+		EnableConsistencyWrapper: true,
+		WrapperConfig: providerpkg.DefaultWrapperConfig(),
+	}
+}
 
 // NewFactory creates a new provider factory
 func NewFactory() *Factory {
-	return &Factory{}
+	return &Factory{
+		wrapperConfig: providerpkg.DefaultWrapperConfig(),
+	}
+}
+
+// NewFactoryWithConfig creates a new provider factory with custom configuration
+func NewFactoryWithConfig(config FactoryConfig) *Factory {
+	return &Factory{
+		wrapperConfig: config.WrapperConfig,
+	}
 }
 
 // CreateProvider creates a provider instance from configuration
 func (f *Factory) CreateProvider(providerConfig config.ProviderConfig) (uploader.Provider, error) {
+	return f.CreateProviderWithWrapper(providerConfig, DefaultFactoryConfig().EnableConsistencyWrapper)
+}
+
+// CreateProviderWithWrapper creates a provider with optional consistency wrapper
+func (f *Factory) CreateProviderWithWrapper(providerConfig config.ProviderConfig, enableWrapper bool) (uploader.Provider, error) {
 	logging.ProviderConfig(providerConfig.Name, providerConfig.Settings)
+
+	// Create the base provider
+	var provider uploader.Provider
+	var err error
 
 	switch strings.ToLower(providerConfig.Name) {
 	case "buzzheavier":
-		provider, err := buzzheavier.New(providerConfig.Settings)
+		provider, err = buzzheavier.New(providerConfig.Settings)
 		if err != nil {
 			logging.ErrorContext("provider_creation", err, map[string]interface{}{
 				"provider": providerConfig.Name,
@@ -32,7 +67,6 @@ func (f *Factory) CreateProvider(providerConfig config.ProviderConfig) (uploader
 			})
 			return nil, fmt.Errorf("failed to create provider '%s': %w", providerConfig.Name, err)
 		}
-		return provider, nil
 	default:
 		err := fmt.Errorf("unknown provider: %s", providerConfig.Name)
 		logging.ErrorContext("provider_creation", err, map[string]interface{}{
@@ -40,10 +74,28 @@ func (f *Factory) CreateProvider(providerConfig config.ProviderConfig) (uploader
 		})
 		return nil, err
 	}
+
+	// Apply consistency wrapper if enabled
+	if enableWrapper {
+		logging.ProviderConfig(provider.Name(), map[string]interface{}{
+			"wrapper_enabled":         true,
+			"validation_enabled":      f.wrapperConfig.PreUploadValidation,
+			"auto_retry_enabled":      f.wrapperConfig.AutoRetry,
+			"max_retries":             f.wrapperConfig.MaxRetries,
+		})
+		provider = providerpkg.NewConsistencyWrapper(provider, f.wrapperConfig)
+	}
+
+	return provider, nil
 }
 
 // CreateProviders creates multiple provider instances from configuration
 func (f *Factory) CreateProviders(providerConfigs []config.ProviderConfig) ([]uploader.Provider, error) {
+	return f.CreateProvidersWithWrapper(providerConfigs, DefaultFactoryConfig().EnableConsistencyWrapper)
+}
+
+// CreateProvidersWithWrapper creates multiple providers with optional consistency wrapper
+func (f *Factory) CreateProvidersWithWrapper(providerConfigs []config.ProviderConfig, enableWrapper bool) ([]uploader.Provider, error) {
 	var providers []uploader.Provider
 
 	for _, providerConfig := range providerConfigs {
@@ -52,7 +104,7 @@ func (f *Factory) CreateProviders(providerConfigs []config.ProviderConfig) ([]up
 			continue
 		}
 
-		provider, err := f.CreateProvider(providerConfig)
+		provider, err := f.CreateProviderWithWrapper(providerConfig, enableWrapper)
 		if err != nil {
 			return nil, err
 		}
@@ -90,8 +142,13 @@ func (f *Factory) CreateProvidersFromNames(providerNames []string, allConfigs []
 	return f.CreateProviders(selectedConfigs)
 }
 
-// CreateAllProviders creates all available providers regardless of enabled status
+// CreateAllProviders creates all available providers with consistency wrapper enabled
 func (f *Factory) CreateAllProviders() ([]uploader.Provider, error) {
+	return f.CreateAllProvidersWithWrapper(DefaultFactoryConfig().EnableConsistencyWrapper)
+}
+
+// CreateAllProvidersWithWrapper creates all available providers with optional consistency wrapper
+func (f *Factory) CreateAllProvidersWithWrapper(enableWrapper bool) ([]uploader.Provider, error) {
 	// Define all available providers with default settings
 	var providers []uploader.Provider
 
@@ -104,7 +161,19 @@ func (f *Factory) CreateAllProviders() ([]uploader.Provider, error) {
 		})
 		return nil, fmt.Errorf("failed to create buzzheavier provider: %w", err)
 	}
-	providers = append(providers, buzzProvider)
+
+	// Apply consistency wrapper if enabled
+	if enableWrapper {
+		logging.ProviderConfig(buzzProvider.Name(), map[string]interface{}{
+			"wrapper_enabled":         true,
+			"validation_enabled":      f.wrapperConfig.PreUploadValidation,
+			"auto_retry_enabled":      f.wrapperConfig.AutoRetry,
+			"max_retries":             f.wrapperConfig.MaxRetries,
+		})
+		providers = append(providers, providerpkg.NewConsistencyWrapper(buzzProvider, f.wrapperConfig))
+	} else {
+		providers = append(providers, buzzProvider)
+	}
 
 	return providers, nil
 }

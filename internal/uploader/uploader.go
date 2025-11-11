@@ -4,19 +4,23 @@ import (
 	"context"
 	"io"
 	"time"
+
+	"github.com/parnexcodes/woof/internal/providers"
 )
 
 // UploadResult represents the result of a file upload
 type UploadResult struct {
-	FileName    string        `json:"filename"`
-	FilePath    string        `json:"filepath"`
-	Size        int64         `json:"size"`
-	URL         string        `json:"url"`
-	Provider    string        `json:"provider"`
-	Duration    time.Duration `json:"duration"`
-	Error       error         `json:"error,omitempty"`
-	UploadTime  time.Time     `json:"upload_time"`
-	ProgressInfo interface{} `json:"-"`
+	FileName    string                     `json:"filename"`
+	FilePath    string                     `json:"filepath"`
+	Size        int64                      `json:"size"`
+	URL         string                     `json:"url"`            // Convenience field, extracted from Response
+	Provider    string                     `json:"provider"`
+	Duration    time.Duration              `json:"duration"`
+	Error       error                      `json:"error,omitempty"`
+	UploadTime  time.Time                  `json:"upload_time"`
+	ProgressInfo interface{}               `json:"-"`
+	// Enhanced response data
+	Response    *providers.ProviderResponse `json:"response"`
 }
 
 // ProgressInfo represents upload progress information
@@ -28,10 +32,13 @@ type ProgressInfo struct {
 	Speed         float64 `json:"speed"` // bytes per second
 }
 
-// Provider interface for different file hosting services
+// Provider interface for different file hosting services with enhanced capabilities
 type Provider interface {
 	Name() string
-	Upload(ctx context.Context, filePath string, file io.Reader, size int64) (string, error)
+	Upload(ctx context.Context, filePath string, file io.Reader, size int64) (*providers.ProviderResponse, error)
+	ValidateFile(ctx context.Context, filePath string, size int64) error
+	GetMaxFileSize() int64
+	GetSupportedExtensions() []string
 }
 
 // FileInfo represents information about a file to be uploaded
