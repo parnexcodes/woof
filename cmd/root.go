@@ -1,0 +1,72 @@
+package cmd
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+)
+
+var (
+	cfgFile     string
+	verbose     bool
+	concurrency int
+	outputFormat string
+
+	rootCmd = &cobra.Command{
+		Use:   "woof",
+		Short: "High-performance parallel file uploader",
+		Long: `Woof is a high-performance CLI tool for uploading files and folders
+to multiple file hosting services with support for parallel uploads,
+JSON output piping, and extensive configuration options.`,
+	}
+)
+
+// Execute executes the root command
+func Execute() error {
+	return rootCmd.Execute()
+}
+
+func init() {
+	cobra.OnInitialize(initConfig)
+
+	// Global flags
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.woof.yaml)")
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
+	rootCmd.PersistentFlags().IntVarP(&concurrency, "concurrency", "c", 5, "maximum number of parallel uploads")
+	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "text", "output format (text, json)")
+
+	// Bind flags to viper
+	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
+	viper.BindPFlag("concurrency", rootCmd.PersistentFlags().Lookup("concurrency"))
+	viper.BindPFlag("output", rootCmd.PersistentFlags().Lookup("output"))
+
+	// Set default values
+	viper.SetDefault("concurrency", 5)
+	viper.SetDefault("output", "text")
+
+	// Add subcommands
+	rootCmd.AddCommand(uploadCmd)
+	rootCmd.AddCommand(versionCmd)
+}
+
+func initConfig() {
+	if cfgFile != "" {
+		viper.SetConfigFile(cfgFile)
+	} else {
+		home, err := os.UserHomeDir()
+		cobra.CheckErr(err)
+
+		viper.AddConfigPath(home)
+		viper.AddConfigPath(".")
+		viper.SetConfigType("yaml")
+		viper.SetConfigName(".woof")
+	}
+
+	viper.AutomaticEnv()
+
+	if err := viper.ReadInConfig(); err == nil && verbose {
+		fmt.Println("Using config file:", viper.ConfigFileUsed())
+	}
+}
