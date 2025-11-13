@@ -9,6 +9,7 @@ import (
 	"github.com/parnexcodes/woof/internal/uploader"
 	providerpkg "github.com/parnexcodes/woof/internal/providers"
 	"github.com/parnexcodes/woof/pkg/providers/buzzheavier"
+	"github.com/parnexcodes/woof/pkg/providers/gofile"
 )
 
 // Factory creates provider instances based on configuration
@@ -60,6 +61,15 @@ func (f *Factory) CreateProviderWithWrapper(providerConfig config.ProviderConfig
 	switch strings.ToLower(providerConfig.Name) {
 	case "buzzheavier":
 		provider, err = buzzheavier.New(providerConfig.Settings)
+		if err != nil {
+			logging.ErrorContext("provider_creation", err, map[string]interface{}{
+				"provider": providerConfig.Name,
+				"settings": providerConfig.Settings,
+			})
+			return nil, fmt.Errorf("failed to create provider '%s': %w", providerConfig.Name, err)
+		}
+	case "gofile":
+		provider, err = gofile.New(providerConfig.Settings)
 		if err != nil {
 			logging.ErrorContext("provider_creation", err, map[string]interface{}{
 				"provider": providerConfig.Name,
@@ -173,6 +183,29 @@ func (f *Factory) CreateAllProvidersWithWrapper(enableWrapper bool) ([]uploader.
 		providers = append(providers, providerpkg.NewConsistencyWrapper(buzzProvider, f.wrapperConfig))
 	} else {
 		providers = append(providers, buzzProvider)
+	}
+
+	// GoFile provider with default settings
+	logging.ProviderConfig("gofile", map[string]interface{}{"mode": "all_providers_defaults"})
+	gofileProvider, err := gofile.New(map[string]interface{}{})
+	if err != nil {
+		logging.ErrorContext("create_all_providers", err, map[string]interface{}{
+			"provider": "gofile",
+		})
+		return nil, fmt.Errorf("failed to create gofile provider: %w", err)
+	}
+
+	// Apply consistency wrapper if enabled
+	if enableWrapper {
+		logging.ProviderConfig(gofileProvider.Name(), map[string]interface{}{
+			"wrapper_enabled":         true,
+			"validation_enabled":      f.wrapperConfig.PreUploadValidation,
+			"auto_retry_enabled":      f.wrapperConfig.AutoRetry,
+			"max_retries":             f.wrapperConfig.MaxRetries,
+		})
+		providers = append(providers, providerpkg.NewConsistencyWrapper(gofileProvider, f.wrapperConfig))
+	} else {
+		providers = append(providers, gofileProvider)
 	}
 
 	return providers, nil

@@ -69,6 +69,14 @@ func setDefaults() {
 				"timeout":           "10m",
 			},
 		},
+		{
+			Name:    "gofile",
+			Enabled: true,
+			Settings: map[string]interface{}{
+				"upload_url": "https://upload.gofile.io/uploadFile",
+				"timeout":    "10m",
+			},
+		},
 	})
 }
 

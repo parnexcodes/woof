@@ -122,6 +122,12 @@ Woof is a high-performance CLI file uploader built with Go and Cobra. The applic
   - Returns rich ProviderResponse with metadata (upload duration, file size, etc.)
   - Proper error categorization and structured error handling
   - Built-in official URL defaults (no config required)
+- **gofile/**: GoFile provider implementation
+  - Multipart form-based uploads to GoFile.io
+  - Unlimited file size support (reports 0 for max size)
+  - Supports all file types (reports ["*"] for extensions)
+  - Optional folder ID support for organized uploads
+  - Returns structured ProviderResponse with GoFile-specific metadata
 - Individual provider packages implement the `Provider` interface
 
 ### Key Interfaces
@@ -165,6 +171,16 @@ type Uploader interface {
 - Structured error handling with proper categorization and retry information
 - Full test coverage with mock HTTP servers
 - Configurable timeouts, max file sizes, and base URLs (optional - defaults to official endpoints)
+
+### Provider Implementation (GoFile)
+- Multipart form-based uploads to GoFile.io API
+- Supports unlimited file sizes (reports MaxFileSize = 0)
+- Supports all file extensions (reports ["*"] in SupportedExtensions)
+- Optional folder ID parameter for organized file management
+- Returns ProviderResponse with GoFile-specific metadata (gofile_id, folder_id, etc.)
+- Comprehensive error handling for network, API, and validation errors
+- Full test coverage including context cancellation and edge cases
+- Configurable upload URL and timeout settings
 
 ### Provider Consistency System
 - **Structured Responses**: All providers return consistent `ProviderResponse` objects
@@ -228,14 +244,15 @@ The `--verbose/-v` flag enables professional logging with:
    - `Name()`: Return provider name
    - `Upload()`: Return structured `*ProviderResponse, error`
    - `ValidateFile()`: Pre-upload validation
-   - `GetMaxFileSize()`: Return supported max file size
-   - `GetSupportedExtensions()`: Return supported file extensions
+   - `GetMaxFileSize()`: Return supported max file size (0 for unlimited)
+   - `GetSupportedExtensions()`: Return supported file extensions (["*"] for all types)
 3. Use the internal base provider utilities for common HTTP operations and error handling
 4. Add factory case in `pkg/providers/factory.go`
 5. Add provider to `CreateAllProviders()` method for `--all` flag support
 6. Add provider configuration defaults in `internal/config/config.go` (optional)
-7. Write comprehensive tests with mock HTTP servers
-8. Test CLI integration without configuration using the new flag system
+7. Update `.woof.yaml` example configuration (optional)
+8. Write comprehensive tests with mock HTTP servers
+9. Test CLI integration without configuration using the new flag system
 
 **Provider Implementation Guidelines:**
 - Use structured responses with metadata (upload duration, timestamps, etc.)
@@ -243,6 +260,8 @@ The `--verbose/-v` flag enables professional logging with:
 - Implement proper file validation and capability reporting
 - Include provider-specific data in `ProviderResponse.ProviderData`
 - Use the base provider helper methods for HTTP operations and logging
+- Support context cancellation for proper timeout handling
+- Report accurate capabilities (file sizes, extensions) for validation
 
 ### Code Organization
 - Internal packages (`internal/`) are for application-private code

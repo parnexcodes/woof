@@ -3,15 +3,20 @@ verbose: true
 output: "text"
 
 providers:
-  - name: "buzzheavier"
-    enabled: true
-    settings:
-      upload_url: "https://w.buzzheavier.com"
-      download_base_url: "https://buzzheavier.com"
-      timeout: "10m"
+    - name: "buzzheavier"
+      enabled: true
+      settings:
+          upload_url: "https://w.buzzheavier.com"
+          download_base_url: "https://buzzheavier.com"
+          timeout: "10m"
+    - name: "gofile"
+      enabled: true
+      settings:
+          upload_url: "https://upload.gofile.io/uploadFile"
+          timeout: "10m"
 
 upload:
-  retry_attempts: 3
-  retry_delay: "2s"
-  chunk_size: 1048576  # 1MB
-  timeout: "30m"
+    retry_attempts: 3
+    retry_delay: "2s"
+    chunk_size: 1048576 # 1MB
+    timeout: "30m"

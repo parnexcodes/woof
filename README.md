@@ -102,6 +102,12 @@ providers:
       upload_url: "https://w.buzzheavier.com"  # Optional - defaults to official URL
       download_base_url: "https://buzzheavier.com"  # Optional - defaults to official URL
       timeout: "10m"
+  - name: "gofile"
+    enabled: true
+    settings:
+      upload_url: "https://upload.gofile.io/uploadFile"  # Optional - defaults to official URL
+      timeout: "10m"
+      folder_id: ""  # Optional - for organizing uploads
 
 # Upload settings
 upload:
@@ -126,6 +132,12 @@ woof upload --config .woof.yaml --all -f "*.pdf"
 - **BuzzHeavier**: File hosting service with PUT-based uploads
   - Works out-of-the-box with default URLs (no config needed)
   - Use with `--providers buzzheavier` flag or `--all` to include all providers
+- **GoFile**: File hosting service with multipart form uploads
+  - Unlimited file size support
+  - All file types supported
+  - Optional folder organization with folder ID
+  - Works out-of-the-box (no config needed)
+  - Use with `--providers gofile` flag or `--all` to include all providers
 
 ### Upload Command
 
@@ -163,7 +175,10 @@ woof/
 │   ├── logging/        # Professional logging system with logrus
 │   └── output/         # Output handlers
 ├── pkg/               # Public packages
-│   └── providers/     # File hosting provider implementations (BuzzHeavier, factory)
+│   └── providers/     # File hosting provider implementations
+│       ├── buzzheavier/    # BuzzHeavier provider (PUT-based)
+│       ├── gofile/         # GoFile provider (multipart, unlimited size)
+│       └── factory.go      # Provider factory
 ├── main.go            # Application entry point
 └── go.mod             # Go module definition
 ```
